@@ -4,7 +4,15 @@ import cn.edu.kust.komi.ppjoinplus.models.Records
 
 object Main {
   def main(args: Array[String]): Unit = {
-    RecordTestMain()
+    //    RecordTestMain()
+    PPJoinPlusTestMain()
+  }
+
+  def PPJoinPlusTestMain(): Unit = {
+    val records = new Records("C D F", "A B E F G", "A B C D E", "B C D E F")
+    records.init()
+    println(records)
+    PPJoinPlus.ppjoin(records, 0.5)
   }
 
   def RecordTestMain(): Unit = {
