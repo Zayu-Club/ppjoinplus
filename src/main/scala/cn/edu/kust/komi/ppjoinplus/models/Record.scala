@@ -22,12 +22,12 @@ class Record(line: String) {
     tokenBuffer.toList
   }
 
-  def order(statistics: Map[String, Int], t: Double): Unit = {
+  def init(statistics: Map[String, Int], t: Double): Unit = {
     tokens = tokens.sortBy(word => statistics(word))
     prefix = tokens.length - (t * tokens.length).ceil.toInt + 1
   }
 
-  //  def prefix(t: Double): Int = tokens.length - (t * tokens.length).ceil.toInt + 1
+  def prefixTokens():List[String]  = tokens.take(prefix)
 
   def alphaWith(target: Record, t: Double): Int = ((t / (1 + t)) * (tokens.length + target.tokens.length)).ceil.toInt
 
