@@ -4,7 +4,6 @@ import scala.collection.mutable
 
 class Record(line: String) {
   val original: String = line
-  var prefix: Int = 0
   var tokens: List[String] = normalize()
 
   def normalize(): List[String] = {
@@ -22,14 +21,17 @@ class Record(line: String) {
     tokenBuffer.toList
   }
 
-  def init(statistics: Map[String, Int], t: Double): Unit = {
+  def order(statistics: Map[String, Int]): Unit = {
     tokens = tokens.sortBy(word => statistics(word))
-    prefix = tokens.length - (t * tokens.length).ceil.toInt + 1
   }
 
-  def prefixTokens():List[String]  = tokens.take(prefix)
+  def prefix(threshold: Double): Int = tokens.length - (threshold * tokens.length).ceil.toInt + 1
 
-  def alphaWith(target: Record, t: Double): Int = ((t / (1 + t)) * (tokens.length + target.tokens.length)).ceil.toInt
+  def prefixTokens(threshold: Double):List[String]  = tokens.take(this.prefix(threshold))
+
+  def suffix(threshold: Double): Int = (threshold * tokens.length).ceil.toInt - 1
+
+  def suffixTokens(threshold: Double):List[String]  = tokens.takeRight(this.suffix(threshold))
 
   override def toString: String = tokens.toString()
 

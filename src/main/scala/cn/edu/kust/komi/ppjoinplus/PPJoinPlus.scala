@@ -5,9 +5,10 @@ import cn.edu.kust.komi.ppjoinplus.models.Record
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-class PPJoinPlus(t:Double = 0.8) {
+class PPJoinPlus(t:Double = 0.8,depth:Int = 1) {
   val records: mutable.ListBuffer[Record] = new mutable.ListBuffer[Record]
   var threshold: Double = t
+  var maxDepth:Int = depth
   var tokenCount: Map[String, Int] = Map[String, Int]()
 
   def addRecord(lines: String*): Unit = lines.foreach(records += new Record(_))
@@ -15,12 +16,12 @@ class PPJoinPlus(t:Double = 0.8) {
   def init(): Unit = {
     println("> Initialization <")
     tokenCount = records.flatMap(record => record.tokens).groupBy(identity).mapValues(_.length)
-    records.foreach(_.init(tokenCount, threshold))
+    records.foreach(_.order(tokenCount))
     println(this)
   }
 
   def ppjoin(): Set[(Int, Int)] = {
-    println("> PPJoin <")
+    println("> PPJoin Threshold: %f <".format(threshold))
 
     var S: Set[(Int, Int)] = Set[(Int, Int)]()
 
@@ -29,9 +30,9 @@ class PPJoinPlus(t:Double = 0.8) {
 
     records.zipWithIndex.foreach {
       case (record, recordID) =>
-        // Candidates map: A [recordID, same token count in prefix]
-        val A: mutable.HashMap[Int,Int] = mutable.HashMap[Int,Int]()
-        record.tokens.take(record.prefix).zipWithIndex.foreach {
+        // Candidates List
+        val A: mutable.Set[Int] = mutable.Set[Int]()
+        record.tokens.take(record.prefix(t)).zipWithIndex.foreach {
           case (token, tokenIndex) =>
             I.getOrElseUpdate(token, new ListBuffer[(Int, Int)]())
               .filter {
@@ -39,41 +40,115 @@ class PPJoinPlus(t:Double = 0.8) {
               }
               .foreach {
                 case (invertedRecordId, _) =>
-                  val prefixSameTokensCount = record.prefixTokens().toSet.&(records(invertedRecordId).prefixTokens().toSet).size
-                  if (prefixSameTokensCount > 0)
-                    A(invertedRecordId) = prefixSameTokensCount
+                  if (record.prefixTokens(t).toSet.&(records(invertedRecordId).prefixTokens(t).toSet).nonEmpty)
+                    A += invertedRecordId
               }
             I(token).append((recordID, tokenIndex))
         }
         // verify(record, A, alpha)
-        for (relevantRecordID <- A.keySet) {
-          val alpha = record.alphaWith(records(relevantRecordID), threshold)
+        for (relevantRecordID <- A) {
+          val a = alpha(record,records(relevantRecordID))
           val overlap = record.tokens.toSet.&(records(relevantRecordID).tokens.toSet).size
-          if (overlap >= alpha)
+          if (overlap >= a)
             S += ((recordID, relevantRecordID))
         }
-        printf("A[%d - %s|%s]: %s\n", recordID, record.tokens.take(record.prefix).mkString(" "), record.tokens.takeRight(record.tokens.length - record.prefix).mkString(" "), A.toList.mkString(" "))
+        printf("Candidates: %d -> %s\n", recordID, A.toList.mkString(" "))
     }
 
-    // Result Log
-    println("\n###### Result ######")
-    println("Inverted indices:")
-    for ((k, l) <- I) printf("%s -> %s\n", k, l.mkString(" "))
-    printf("Threshold: %f. Verify:\n", threshold)
-    for ((x, y) <- S) printf("%d - %d => %1.3f\n", x, y, jaccard(records(x).tokens.toSet, records(y).tokens.toSet))
-    print("#### All Result ####")
-    for (x <- records.indices) {
-      print("\n")
-      for (y <- x+1 until records.length) {
-        val sim = jaccard(records(x).tokens.toSet, records(y).tokens.toSet)
-        if (sim < threshold) print("×")
-        else print("√")
-        printf("%d->%d:%1.3f  ",x, y,sim)
+    // - Result Log ---------
+    println("> Inverted indices <")
+    for ((k, l) <- I) println("%s -> %s".format(k, l.mkString(" ")))
+    println("> Verify Result <")
+    for ((x, y) <- S) printf("%d <-> %d => %1.3f\n", x, y, jaccard(records(x).tokens.toSet, records(y).tokens.toSet))
+    // ----------------------
+    S
+  }
+
+  def ppjoinplus(): Set[(Int, Int)] = {
+    println("> PPJoin+ Threshold: %f <".format(threshold))
+
+    var S: Set[(Int, Int)] = Set[(Int, Int)]()
+    // Inverted indices token in prefix map: I
+    val I: mutable.HashMap[String, ListBuffer[(Int, Int)]] = new mutable.HashMap[String, ListBuffer[(Int, Int)]]()
+
+    records.zipWithIndex.foreach {
+      case (record, recordID) =>
+        val A: mutable.Set[Int] = mutable.Set[Int]()
+
+        record.prefixTokens(t).zipWithIndex.foreach {
+          case (token, tokenIndex) =>
+            I.getOrElseUpdate(token, new ListBuffer[(Int, Int)]())
+              .filter {
+                case (recordID, _) => records(recordID).tokens.length >= threshold * record.tokens.length
+              }
+              .foreach {
+                case (docID, wordID) =>
+                  val xp = record.prefixTokens(t)
+                  val yp = records(docID).prefixTokens(t)
+                  val xs = record.suffixTokens(t)
+                  val ys = records(docID).suffixTokens(t)
+                  if (xp.toSet.&(yp.toSet).nonEmpty) {
+                    val hMax = hammingMax(record, records(docID), tokenIndex, wordID)
+                    if (suffixFiltering(xs, ys, hMax, 1) <= hMax) A += docID
+                  }
+              }
+            I(token).append((recordID, tokenIndex))
+        }
+
+        // verify(record, A, alpha)
+        for (relevantRecordID <- A) {
+          val a = alpha(record, records(relevantRecordID))
+          val overlap = record.tokens.toSet.&(records(relevantRecordID).tokens.toSet).size
+          if (overlap >= a)
+            S += ((recordID, relevantRecordID))
+        }
+        printf("Candidates: %d -> %s\n", recordID, A.toList.mkString(" "))
+    }
+    // - Result Log ---------
+    println("> Inverted indices <")
+    for ((k, l) <- I) println("%s -> %s".format(k, l.mkString(" ")))
+    println("> Verify Result <")
+    for ((x, y) <- S) printf("%d <-> %d => %1.3f\n", x, y, jaccard(records(x).tokens.toSet, records(y).tokens.toSet))
+    // ----------------------
+
+    def suffixFiltering(x: List[String], y: List[String], hMax: Int, d: Int): Int = {
+      if (d >= maxDepth) {
+        return (x.length - y.length).abs
+      }
+      val w = y((y.length / 2.0).ceil.toInt - 1)
+
+      val (xl, xr) = partition(x, w)
+      val (yl, yr) = partition(y, w)
+
+      var h = (xl.length - yl.length).abs + (xr.length - yr.length).abs
+      if (h > hMax) return h
+      else {
+        val hl = suffixFiltering(xl, yl, hMax - (xr.length - yr.length).abs, d + 1)
+        h = hl + (xr.length - yr.length).abs
+        if (h <= hMax)
+          hl + suffixFiltering(xr, xr, hMax - hl, d + 1)
+        else
+          h
       }
     }
-    println("####################")
+
+    def partition(s: List[String], w: String): (List[String], List[String]) = {
+      s.indexOf(w) match {
+        case -1 =>
+          (List[String](), List[String]())
+        case index =>
+          (s.take(index), s.takeRight(s.length - index -1))
+      }
+    }
 
     S
+  }
+
+  def checkAll(): Unit = {
+    println("> Check  All <")
+    for (x <- records.indices)
+      for (y <- x+1 until records.length)
+        println("%d <-> %d => %1.3f".format(x, y, jaccard(records(x).tokens.toSet, records(y).tokens.toSet)))
   }
 
   def jaccard(x: Set[Any], y: Set[Any]): Double = {
@@ -81,6 +156,12 @@ class PPJoinPlus(t:Double = 0.8) {
     val b: Double = (x ++ y).size
     a / b
   }
+
+  def alpha(x: Record,y: Record): Int =
+    ( (threshold/(1+threshold)) * (x.tokens.length + y.tokens.length)).ceil.toInt
+
+  def hammingMax(x: Record,y: Record, i:Int, j:Int): Int =
+    x.tokens.length + y.tokens.length - 2 * ((threshold/(1+threshold)) * (x.tokens.length + y.tokens.length)).ceil.toInt - (i + j)
 
   override def toString: String = records.zipWithIndex.map { case (record, index) => "%05d ｜ [%-30s] <= [%-30s]".format(index, record.tokens.mkString(" "), record.original) }.mkString("\n")
 }
