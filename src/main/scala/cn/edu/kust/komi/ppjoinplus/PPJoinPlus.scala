@@ -5,11 +5,13 @@ import cn.edu.kust.komi.ppjoinplus.models.Record
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-class PPJoinPlus(t:Double = 0.8,depth:Int = 1) {
+class PPJoinPlus(t: Double = 0.8, depth: Int = 1) {
   val records: mutable.ListBuffer[Record] = new mutable.ListBuffer[Record]
   var threshold: Double = t
-  var maxDepth:Int = depth
+  var maxDepth: Int = depth
   var tokenCount: Map[String, Int] = Map[String, Int]()
+
+  var debug: Boolean = false
 
   def addRecord(lines: String*): Unit = lines.foreach(records += new Record(_))
 
@@ -17,7 +19,7 @@ class PPJoinPlus(t:Double = 0.8,depth:Int = 1) {
     println("> Initialization <")
     tokenCount = records.flatMap(record => record.tokens).groupBy(identity).mapValues(_.length)
     records.foreach(_.order(tokenCount))
-    println(this)
+    if (debug) println(this)
   }
 
   def ppjoin(): Set[(Int, Int)] = {
@@ -47,20 +49,19 @@ class PPJoinPlus(t:Double = 0.8,depth:Int = 1) {
         }
         // verify(record, A, alpha)
         for (relevantRecordID <- A) {
-          val a = alpha(record,records(relevantRecordID))
+          val a = alpha(record, records(relevantRecordID))
           val overlap = record.tokens.toSet.&(records(relevantRecordID).tokens.toSet).size
           if (overlap >= a)
             S += ((recordID, relevantRecordID))
         }
-        printf("Candidates: %d -> %s\n", recordID, A.toList.mkString(" "))
+
+        if (debug) printf("Candidates: %d -> %s\n", recordID, A.toList.mkString(" "))
     }
 
     // - Result Log ---------
-    println("> Inverted indices <")
-    for ((k, l) <- I) println("%s -> %s".format(k, l.mkString(" ")))
-    println("> Verify Result <")
-    for ((x, y) <- S) printf("%d <-> %d => %1.3f\n", x, y, jaccard(records(x).tokens.toSet, records(y).tokens.toSet))
+    if (debug) debugLogout(I, S)
     // ----------------------
+
     S
   }
 
@@ -102,13 +103,12 @@ class PPJoinPlus(t:Double = 0.8,depth:Int = 1) {
           if (overlap >= a)
             S += ((recordID, relevantRecordID))
         }
-        printf("Candidates: %d -> %s\n", recordID, A.toList.mkString(" "))
+
+        if (debug) printf("Candidates: %d -> %s\n", recordID, A.toList.mkString(" "))
     }
+
     // - Result Log ---------
-    println("> Inverted indices <")
-    for ((k, l) <- I) println("%s -> %s".format(k, l.mkString(" ")))
-    println("> Verify Result <")
-    for ((x, y) <- S) printf("%d <-> %d => %1.3f\n", x, y, jaccard(records(x).tokens.toSet, records(y).tokens.toSet))
+    if (debug) debugLogout(I, S)
     // ----------------------
 
     def suffixFiltering(x: List[String], y: List[String], hMax: Int, d: Int): Int = {
@@ -137,17 +137,30 @@ class PPJoinPlus(t:Double = 0.8,depth:Int = 1) {
         case -1 =>
           (List[String](), List[String]())
         case index =>
-          (s.take(index), s.takeRight(s.length - index -1))
+          (s.take(index), s.takeRight(s.length - index - 1))
       }
     }
 
     S
   }
 
+  def alpha(x: Record, y: Record): Int =
+    ((threshold / (1 + threshold)) * (x.tokens.length + y.tokens.length)).ceil.toInt
+
+  def hammingMax(x: Record, y: Record, i: Int, j: Int): Int =
+    x.tokens.length + y.tokens.length - 2 * ((threshold / (1 + threshold)) * (x.tokens.length + y.tokens.length)).ceil.toInt - (i + j)
+
+  def debugLogout(I: mutable.HashMap[String, ListBuffer[(Int, Int)]], S: Set[(Int, Int)]): Unit = {
+    println("> Inverted indices <")
+    for ((k, l) <- I) println("%s -> %s".format(k, l.mkString(" ")))
+    println("> Verify Result <")
+    for ((x, y) <- S) printf("%d <-> %d => %1.3f\n", x, y, jaccard(records(x).tokens.toSet, records(y).tokens.toSet))
+  }
+
   def checkAll(): Unit = {
     println("> Check  All <")
     for (x <- records.indices)
-      for (y <- x+1 until records.length)
+      for (y <- x + 1 until records.length)
         println("%d <-> %d => %1.3f".format(x, y, jaccard(records(x).tokens.toSet, records(y).tokens.toSet)))
   }
 
@@ -156,12 +169,6 @@ class PPJoinPlus(t:Double = 0.8,depth:Int = 1) {
     val b: Double = (x ++ y).size
     a / b
   }
-
-  def alpha(x: Record,y: Record): Int =
-    ( (threshold/(1+threshold)) * (x.tokens.length + y.tokens.length)).ceil.toInt
-
-  def hammingMax(x: Record,y: Record, i:Int, j:Int): Int =
-    x.tokens.length + y.tokens.length - 2 * ((threshold/(1+threshold)) * (x.tokens.length + y.tokens.length)).ceil.toInt - (i + j)
 
   override def toString: String = records.zipWithIndex.map { case (record, index) => "%05d ｜ [%-30s] <= [%-30s]".format(index, record.tokens.mkString(" "), record.original) }.mkString("\n")
 }
