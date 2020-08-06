@@ -1,4 +1,4 @@
-package cn.edu.kust.komi.ppjoinplus
+package komi.ppjoinplus
 
 object main {
   def main(args: Array[String]): Unit = {

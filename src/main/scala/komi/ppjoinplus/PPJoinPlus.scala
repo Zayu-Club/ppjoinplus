@@ -1,6 +1,6 @@
-package cn.edu.kust.komi.ppjoinplus
+package komi.ppjoinplus
 
-import cn.edu.kust.komi.ppjoinplus.models.Record
+import komi.ppjoinplus.models.Record
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer

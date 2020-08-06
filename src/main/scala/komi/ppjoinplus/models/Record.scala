@@ -1,4 +1,4 @@
-package cn.edu.kust.komi.ppjoinplus.models
+package komi.ppjoinplus.models
 
 import scala.collection.mutable
 
